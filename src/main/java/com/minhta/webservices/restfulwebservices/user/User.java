@@ -1,45 +1,25 @@
 package com.minhta.webservices.restfulwebservices.user;
 
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Past;
+import lombok.AllArgsConstructor;
+import lombok.Data;
+
 import java.time.LocalDate;
 
+@Data @AllArgsConstructor
 public class User {
-    public User(Integer id, String name, LocalDate birthDate) {
-        this.id = id;
-        this.name = name;
-        this.birthDate = birthDate;
-    }
-
-    public Integer getId() {
-        return id;
-    }
-
-    public void setId(Integer id) {
-        this.id = id;
-    }
 
     private Integer id;
+
+    @NotBlank(message = "Name is required")
     private String name;
 
-    public String getName() {
-        return name;
-    }
-
-    public void setName(String name) {
-        this.name = name;
-    }
-
-    public LocalDate getBirthDate() {
-        return birthDate;
-    }
-
-    public void setBirthDate(LocalDate birthDate) {
-        this.birthDate = birthDate;
-    }
+    @Past(message = "Birth date must be in the past")
+    private LocalDate birthDate;
 
     @Override
     public String toString() {
         return "User{" + "id=" + id + ", name='" + name + '\'' + ", birthDate=" + birthDate + '}';
     }
-
-    private LocalDate birthDate;
 }
