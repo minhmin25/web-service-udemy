@@ -1,0 +1,322 @@
+Micro service
+***** Config service, centralized config *****
+
+<dependency>
+	<groupId>org.springframework.cloud</groupId>
+	<artifactId>spring-cloud-starter-config</artifactId>
+</dependency>
+
+spring.application.name=limits-service
+server.port=8080
+// optional: nếu có config server thì sẽ lấy theo config server, không có sẽ lấy giá trị trong project, nếu add dependency config client thì bắt buộc phải thêm config này
+spring.config.import=optional:configserver:http://localhost:8888
+
+- Class configuration
+@Component
+// tiền tố config
+@ConfigurationProperties("limits-service")
+@Data
+public class Configuration {
+	// hậu tố config
+	// limits-service.minimum=
+    private int minimum;
+	// limits-service.maximum
+    private int maximum;
+}
+
+***** Config server *****
+
+<dependency>
+	<groupId>org.springframework.cloud</groupId>
+	<artifactId>spring-cloud-config-server</artifactId>
+</dependency>
+
+spring.application.name=spring-cloud-config-server
+server.port=8888
+spring.cloud.config.server.git.uri=file:///D:/Working/Training/SpringBoot/micro-services/git-localconfig-repo
+
+@EnableConfigServer
+@SpringBootApplication
+
+- Note
+file properties trên config server phải trùng tên với service name 
+nếu dùng config khác thì thêm properties
+spring.cloud.config.name=
+
+- Config server profile
+Tạo các profile bằng cách tạo thêm các file config properties trên config server thêm hậu tố là tên profile
+ví dụ: config cho limits-service cho profile default là limits-service.properties
+profile dev: là limits-service-dev.properties
+profile qa: limits-service-qa.properties
+
+Config trên service
+spring.profiles.active=dev (config profile cho cả service)
+hoặc spring.cloud.config.profile=dev (config project cho riêng config server)
+
+***** Call service using Feign Framework *****
+<dependency>
+	<groupId>org.springframework.cloud</groupId>
+	<artifactId>spring-cloud-starter-openfeign</artifactId>
+</dependency>
+		
+Tạo interface proxy tương ứng với service cần gọi
+vd: cần gọi tới currency-exchange service, name nên là tên được cấu hình của service cần gọi (spring.application.name=currency-exchange)
+@FeignClient(name = "currency-exchange", url = "localhost:8000")
+public interface CurrencyExchangeProxy {
+	// các hàm sẽ gọi đến service cần gọi bao gồm http method, path, với return type là object chứa được data trả về
+	@GetMapping("/currency-exchange/from/{from}/to/{to}")
+    CurrencyConversion retrieveExchangeValue(@PathVariable String from, @PathVariable String to);
+}
+
+Tại controller chỉ cần khai báo interface proxy là gọi đến hàm lấy dữ liệu tương ứng
+
+private final CurrencyExchangeProxy proxy;
+
+public CurrencyConversionController(CurrencyExchangeProxy proxy) {
+	this.proxy = proxy;
+}
+
+@GetMapping("/currency-conversion/from/{from}/to/{to}/quantity/{quantity}")
+public CurrencyConversion calculateCurrencyConversion(
+		@PathVariable String from,
+		@PathVariable String to,
+		@PathVariable BigDecimal quantity
+) {
+	CurrencyConversion currencyConversion = proxy.retrieveExchangeValue(from, to);
+	return new CurrencyConversion(currencyConversion.getId(), from, to, quantity, currencyConversion.getConversionMultiple(), quantity.multiply(currencyConversion.getConversionMultiple()), currencyConversion.getEnvironment());
+}
+
+***** Naming server/Service registry  *****
+- Tất cả service nên được đăng ký trên service registry
+- Service registry sẽ đóng vai trò trong load balancing, khi các service thực hiện gọi lẫn nhau, sẽ gọi đến service registry xem địa chỉ của service cần gọi là gì (service cần gọi sẽ có nhiều instance, số instance có thể tăng/giảm tuỳ vào nhu cầu sử dụng, hoặc có thể instance đang lỗi không hoạt động, và thực hiện load balancing các instance) để thực hiện yêu cầu, thay vì sẽ hardcode url như ví trên @FeignClient(name = "currency-exchange", url = "localhost:8000")
+
+<dependency>
+	<groupId>org.springframework.cloud</groupId>
+	<artifactId>spring-cloud-starter-netflix-eureka-server</artifactId>
+</dependency>
+
+application.properties
+# Để tránh naming-server tự đăng ký và đọc thông tin từ chính nó
+eureka.client.register-with-eureka=false
+eureka.client.fetch-registry=false
+
+***** Load balancing  *****
+- Thêm dependency eureka-client vào các microservice, việc connect tới naming service, load balancing sẽ đều được thực hiện tự động
+<dependency>
+	<groupId>org.springframework.cloud</groupId>
+	<artifactId>spring-cloud-starter-netflix-eureka-client</artifactId>
+</dependency>
+
+- Sử dụng Feign để thực hiện load balancing, cái này gọi là Client Side Load Balancing 
+- Thiết lập lại Feign config chỉ dùng mình name
+@FeignClient(name = "currency-exchange")
+
+***** API Gateway *****
+- Sử dụng để implement các microservice, dùng để gọi đến tất cả các service đã đăng ký với eureka naming-server
+- Tạo service bao gồm: Eureka Discovery Client, Gateway
+- API Gateway sẽ tìm service theo tên trên naming-server để gọi đến
+- Thay vì implement authen service trên tất cả microservice thì chỉ cần authen trên api gateway
+VD:
+service data-service đang chạy trên: localhost:8080/api/data
+api gateway gọi đến data-service bằng url: localhost:8765/data-service/api/data
+
+
+application.properties
+spring.cloud.gateway.discovery.locator.enabled=true
+
+- Tạo các router để điều hướng url, thêm class configuration
+uri: lb://currency-exchange => sử dụng load balancing qua naming-server
+
+@Configuration
+public class ApiGatewayConfiguration {
+    @Bean
+    public RouteLocator gatewayRouter(RouteLocatorBuilder builder) {
+        return builder.routes()
+                .route(p -> p
+                        .path("/get")
+                        .filters(f -> f
+                                .addRequestHeader("MyHeader", "MyURI")
+                                .addRequestParameter("Param", "MyValue"))
+                        .uri("http://httpbin.org:80"))
+                .route(p -> p.path("/currency-exchange/**")
+                        .uri("lb://currency-exchange"))
+                .route(p -> p.path("/currency-conversion/**")
+                        .uri("lb://currency-conversion"))
+                .route(p -> p.path("/currency-conversion-new/**")
+                        .filters(f -> f.rewritePath(
+                                "/currency-conversion-new/(?<segment>.*)",
+                                "/currency-conversion/${segment}"))
+                        .uri("lb://currency-conversion"))
+                .build();
+    }
+}
+
+- Gateway Logging Filter
+
+***** Circuit Bearker *****
+Circuit Bearker Pattern 
+resilience4j
+
+<dependency>
+	<groupId>org.springframework.boot</groupId>
+	<artifactId>spring-boot-starter-actuator</artifactId>
+</dependency>
+<dependency>
+	<groupId>org.springframework.boot</groupId>
+	<artifactId>spring-boot-starter-aop</artifactId>
+</dependency>
+<dependency>
+	<groupId>io.github.resilience4j</groupId>
+	<artifactId>resilience4j-spring-boot2</artifactId>
+</dependency>
+
+Sử dụng cho mục đích gọi đến các service không hoạt động, có lỗi xảy ra thì sẽ thực hiện retry, hardcode response...
+Thêm anotation cho Request Mapping
+@Retry(name = "sample-api", fallbackMethod = "hardcodedResponse")
+name: tên instance, sử dụng để cấu hình trong application.properties
+fallbackMethod: method xử lý exception
+
+application.properties
+# Số lần retry
+resilience4j.retry.instances.sample-api.max-attempts=5
+# Thời gian giữa các lần gọi
+resilience4j.retry.instances.sample-api.wait-duration=2s
+# Thời gian chờ giữa các lần gọi tính theo cấp số nhân
+resilience4j.retry.instances.sample-api.enableExponentialBackoff=true
+
+Circuit Bearker
+- Cơ chế là khi gọi đến các service, trong quá trình xử lý gặp lỗi liên tục và số lần lỗi vượt quá ngưỡng được thiết lập, Circuit Bearker sẽ ngắt các request, ngay lập tức trả về lỗi (thực hiện hàm xử lý lỗi nếu có) thay vì phải chờ xử lý trong 1 khoảng thời gian. Sau thời gian này Circuit Bearker sẽ cho phép các request tiếp tục thực hiện với tần suất thấp, nếu tỉ lệ thành công cao thì Circuit Bearker sẽ cho service hoạt động lại bình thường.
+
+@CircuitBreaker(name = "sample-api", fallbackMethod = "hardcodedResponse")
+
+Rate Limiter
+Giới hạn số lần api được gọi trong 1 khoảng thời gian
+@RateLimiter(name="sample-api")
+
+# Số lần api được gọi trong 1 khoảng thời gian
+resilience4j.ratelimiter.instances.default.limitForPeriod=2
+# Khoảng thời gian refresh lại limit
+resilience4j.ratelimiter.instances.default.limitRefreshPeriod=10s
+
+Bulkhead
+@Bulkhead(name="sample-api")
+Giới hạn số lần gọi đồng thời tới 1 api
+resilience4j.bulkhead.instances.default.maxConcurrentCalls=10
+
+***** Distributed Tracking *****
+Mô hình là tất cả các service sẽ đều gửi thông tin đến 1 distributed tracing server, server này sẽ lưu các thông tin được gửi đến vào database
+Từ đây có thể trace lại các request trên nhiều service
+Zipkin là một trong các distributed tracing server phổ biến
+Micrometers > OpenTelemetry > Zipkin
+Micrometers sử dụng để handle logs, traces, metrics
+OpenTelemetry là 1 open standard, các tiểu chuẩn cho logs, traces, metrics
+
+Cấu hình Micrometers
+Thêm các dependency sau vào các server để collect logs, traces, metrics
+<dependency>
+    <groupId>io.micrometer</groupId>
+    <artifactId>micrometer-observation</artifactId>
+</dependency>
+
+<!-- Open Telemetry as Bridge  -->
+<!-- Simplified Observability, open standard -->
+<dependency>
+    <groupId>io.micrometer</groupId>
+    <artifactId>micrometer-tracing-bridge-otel</artifactId>
+</dependency>
+
+<dependency>
+    <groupId>io.opentelemetry</groupId>
+    <artifactId>opentelemetry-exporter-zipkin</artifactId>
+</dependency>
+
+- Trường hợp kết nối các service qua Feign sử dụng thêm dependency sau để trace được tất cả request
+<!-- Enables tracing of REST API calls made using Feign -->
+<dependency>
+	<groupId>io.github.openfeign</groupId>
+	<artifactId>feign-micrometer</artifactId>
+</dependency>
+
+- Trường hợp kết nối các service gọi RestTemplate, thì thay vì sử dụng trực tiếp new RestTemplate() thì phải tạo RestTemplate từ RestTemplateBuilder và đưa vào 1 class @Configuration để áp dụng common
+@Configuration(proxyBeanMethods = false)
+class RestTemplateConfiguration {
+    
+    @Bean
+    RestTemplate restTemplate(RestTemplateBuilder builder) {
+        return builder.build();
+    }
+}
+
+@RestController
+public class CurrencyConversionController {
+	@Autowired
+    private RestTemplate restTemplate;
+
+	@GetMapping("/currency-conversion/from/{from}/to/{to}/quantity/{quantity}")
+	public CurrencyConversion calculateCurrencyConversion(
+		return ResponseEntity<CurrencyConversion> responseEntity = restTemplate.getForEntity("http://localhost:8000/currency-exchange/from/{from}/to/{to}", CurrencyConversion.class, uriVariables);
+	)
+}
+
+application.properties
+# Tỉ lệ lấy log, từ 0.0 > 1.0 cho 0 > 100%
+management.tracing.sampling.probability=1.0
+# log pattern
+logging.pattern.level=%5p [${spring.application.name:},%X{traceId:-},%X{spanId:-}]
+
+**** Tạo image microservice *****
+Thêm config vào maven build
+<build>
+	<plugins>
+		<plugin>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-maven-plugin</artifactId>
+			<configuration>
+				<image>
+					<name>{docker_id}/minhtams-${project.artifactId}:${project.version}</name>
+					<pullPolicy>IF_NOT_PRESENT</pullPolicy> // chỉ khi image không có trên local registry thì mới pull thì image registry tránh việc phải liên tục pull các base image base để thực hiện việc build image
+				</image>
+			</configuration>
+		</plugin>
+	</plugins>
+</build>
+
+- Chay command build
+mvn spring-boot:build-image -DskipTests
+
+**** Docker Compose *****
+Docker Compose là tool dùng để thiết lập chạy nhiều container cùng lúc, được cấu hình bằng file yaml
+Docker Compose được tích hợp sẵn trong Docker Desktop
+Mặc định file config sẽ đặt tên là docker-compose.yaml
+Example:
+version: '3.8' // Phiên bản compose
+
+services:
+
+  currency-exchange:
+    image: minhtadevvnptit/microservice-currency-exchange-service:0.0.1-SNAPSHOT
+    mem_limit: 700m // maximun ram
+    ports:
+      - "8000:8000" // local port:docker port
+    networks:
+      - currency-network
+    depends_on:
+      - naming-server // start sau naming-server
+    environment:
+      EUREKA.CLIENT.SERVICEURL.DEFAULTZONE: http://naming-server:8761/eureka //localhost trong trên máy local khác với localhost của container, localhost lúc này nó là của docker, docker cho phép các service tìm thấy nhau thông qua tên, do đó thêm config này để các service có thể kết nối được, có thể thiết lập config này bên trong application.properties, config cấu hình ở đây thì cần phải upper case so với trong file application.properties
+      
+  naming-server:
+    image: minhtadevvnptit/microservice-naming-server:0.0.1-SNAPSHOT
+    mem_limit: 700m
+    ports:
+      - "8761:8761"
+    networks:
+      - currency-network
+
+networks:
+  currency-network:
+  
+Command: docker-compose up
+  
+
+

@@ -1,0 +1,124 @@
+Docker
+Docker Registry hub.docker.com
+Là nơi lưu trữ các repository, các version khác nhau của application
+Image là bao gồm tất cả những gì 1 application cần để running
+Image là static, khi start image lên thì được gọi là container
+1 Image cho thể chạy nhiều container
+
+Kiến trức của Docker
+
+Docker Client  > Docker Deamon (Docker Engine)
+Docker Client là nơi mà viết các lệnh command, khi execute các lệnh command được gửi tới Docker Deamon
+Docker Deamon là nơi quản lý các image, container, pull/push local image to image registry, tạo mới image
+
+Command:
+Docker image history <image id>
+Show các bước để tạo ra image
+Docker image inspect <image id>
+Docker container inspect <container id>
+Show các thông số của 1 image/container
+
+docker container run -p 5001:5000 -d <image>
+docker run -p 5001:5000 -d <image>
+Start container tại port 5001 ở máy local mapping vào port 5000 trong docker container, -d detached mode( chạy ngầm )
+Image chưa có trong local registry sẽ được tìm trên image registry, download về rồi mới chạy
+
+docker run -m 512m --cpu-quota 50000
+run container mới limit 512mb ram, cpu 50%, 100% = 100000
+
+docker logs -f <container id>
+show log của container đang chạy
+
+docker container pause <container id>
+docker container unpause <container id>
+Tạm dừng container
+
+docker container stop <container id>
+Dừng chạy container, cho container thời gian để tự stop
+docker container kill <container id>
+Stop container ngay lập tức
+docker container prune
+Xoá các container đã stop
+
+docker events
+Monitor các hành động start/stop container
+docker top <container id>
+show các process đang chạy
+docker stats
+show các thông số cpu, ram, bộ nhớ của các container đang chạy
+docker df
+show các thông số mà docker deamon đang sử dụng
+
+
+Kubernetes
+- Kubernetes là 1 công cụ điều phối hệ thống phân tán
+- 1 trong những công cụ để quản lý tài nguyên ( resource manager ) tốt và phổ biến nhất hiện giờ
+- Resource ở đây là các server, các server này đặt trên cloud, thông thường là các virtual server
+- Các nhà cung cấp dịch vụ cloud có các tên gọi khác nhau về virtual server, Amazone gọi là EC2 (Elastic Compute Cloud) Azure gọi là virtual machines, Google Cloud gọi là compute engines
+- Kubernetes gọi khái niệm virtual server là nodes
+- Kubernetes có thể quản lý hàng nghìn nodes như thế này
+- Để quản lý số lượng nodes lớn như thế, sẽ có 1 vài nodes gọi là master nodes, thông thường sẽ là 1 master node, khi cần 1 hệ thống lớn, có tính sẵn sàng cao thì khi đó sẽ có nhiều master nodes
+- Cluster trong Kubernetes là sự kết hợp của các nodes và master nodes. 
+Cluster = Master Nodes + Worker Nodes
+Trong đó master nodes sẽ quản lý các worker nodes, worker node sẽ là nơi thực hiện chạy application
+
+- Master node gồm các thành phần: API Server(kube-apiserver), distribute database(etcd), Scheduler(kube-scheduler), Controller Manager(kube-controller-manager)
+
+
+
+Command
+Tạo deployment
+kubectl create deployment hello-world-rest-api --image=minhta/hello-world-rest-api:0.0.1.RELEASE
+
+Expose ra ngoài internet
+kubectl expose deployment hello-world-rest-api --type=LoadBalancer --port=8080
+
+Khi thực hiện command kubectl create deployment, Kubernetes thực hiện tạo ra 1 deployment, 1 replicaset, 1 pod
+Khi thực hiện command kubectl expose deployment, Kubernetes thực hiện tạo 1 service
+
+- Mỗi một khái niệm deployment, replicaset, pod, service sẽ đảm nhiệm 1 nhiệm vụ riêng
+- Pod: Pod là đơn vị deployable nhỏ nhất trong Kubernetes, pod là 1 tập hợp các containers
+kubectl get pods
+kubectl describe pod <pod id>
+
+Node > Multi pod > Multi container
+
+Mỗi pod có 1 unique ip address, trong 1 pod có thể chứa nhiều container, các container này sẽ chia sẻ tài nguyên bên trong pod, có thể tương tác với nhau bằng cách gọi nhau qua localhost
+Các pod khác nhau trong cùng 1 node có thể là các application khác nhau hoặc cũng có thể liên quán đến cùng 1 application
+
+Pod có namespace
+namespace có thể được dùng để phân biệt các nhóm khác nhau bên trong 1 cluster
+ví dụ: trong cùng 1 cluster sẽ được phân chia resource cho dev, test, khi đó namespace sẽ được dùng để phân biệt các thành phần cùng chung resource với nhau
+
+Có thể nói là 1 pod cung cấp cách để đặt các container cùng với nhau, hoạt động trên cùng 1 ip address và cung cấp cho chúng 1 cơ chế phân loại bằng cách liên kết chúng qua labels (Thuộc tính cần chú ý của các thành phần trong Kubernetes để có thể liên kết với nhau là labels và selectors)
+
+- Replicaset: Replicaset có chức năng đảm bảo 1 số lượng pods cụ thể luôn được chạy cùng lúc với nhau, hay có thể gọi là nhiều instance của 1 pod chạy cùng lúc với nhau
+kubectl get replicaset / kubectl get rs
+kubectl scale deployment <deployment name> --replicas=3
+
+Replicaset sẽ monitoring pods, nếu có số lượng pods ít hơn số lượng được cấu hình, replicaset sẽ tạo thêm pods
+
+- Deployment: Deployment có nhiệm vụ đảm bảo việc update phiên bản khác của application không có downtime
+# Thay image vào deployment đang hoạt động
+kubectl set image deployment <deployment name> <container name>=<image name>
+kubectl set image deployment hello-world-rest-api hello-world-rest-api=in28min/hello-world-rest-api:0.0.2.RELEASE
+# xem các thông tin của replicaset, bao gồm cả thông tin containers, pods,...
+kubectl get rs hoặc kubectl get rs -o wide
+
+Cấu trúc của deployment: 1 deployment sẽ có nhiều replicaset
+Deployment > Multi Replicaset > Multi Pods
+
+cơ chế mặc định của deployment được gọi là rolling updates, cơ chế này sẽ thực hiện tạo mới 1 replicaset, replicaset mới sẽ tạo pod đầu tiên, khi pod này hoạt động mà không có lỗi, deployment bắt đầu thực hiện giảm từng pods của replicaset cũ, và tăng từng pod trên replicaset mới, việc này được thực hiện tuần tự, giảm 1, thêm 1, kiểm tra hoạt động của pod mới, đến khi replicaset mơi đạt đủ số pods mà replicaset cũ đang chạy, và replicaset cũ không còn pod nào hoạt động.
+Khi mà replicaset mới tạo pod đầu tiên bị lỗi thì deployment sẽ dừng ngay việc tạo thêm pod mới và duy trì hoạt động của replicaset hiện tại
+
+Một số cơ chế khác của deployment:
+
+Để check xem kubernetes thực hiện những gì bên dưới có thể check bằng
+kubectl get events --sort-by metadata creationTimestamps
+
+- Service: Service có vai trò cung cấp 1 interface ra bên ngoài (always available external interface) để truy cập đến ứng dụng mà đang chạy bên trong pod
+Pod có thể xem là đơn vị có nhiều biến động trong kubernetes, có thể bị xoá bất cứ lúc nào và cũng có thể tạo mới bất cứ lúc nào, ví dụ khi deployment version mới, toàn bộ pod cũ bị xoá và thay bằng các pod, ip của các pod này là hoàn toàn khác nhau, ip của pod mới sẽ không trùng với pod vừa bị xoá
+Service sẽ có nhiệm vụ cho phép truy cập ứng dụng đang chạy bên trong pod qua ip cố định duy nhất mà không cần quan tâm đến ip của từng pod là gì
+Service được tạo ngay khi có commend expose deployment
+
+
