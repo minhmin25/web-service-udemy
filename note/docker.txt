@@ -61,10 +61,54 @@ Kubernetes
 - Cluster trong Kubernetes là sự kết hợp của các nodes và master nodes. 
 Cluster = Master Nodes + Worker Nodes
 Trong đó master nodes sẽ quản lý các worker nodes, worker node sẽ là nơi thực hiện chạy application
+Các component bên trong cluster đều giao tiếp với nhau qua API Server, Master Node và Workder Node giao tiếp với nhau bằng kubelet trên Worker Node thông qua API Server trên Master Node
+Tất cả những component trong một kubernetes cluster sẽ không phải chạy như một ứng dụng cài trực tiếp trên server. Mà tất cả những component sẽ được chạy như một Pod, chúng sẽ được deploy tới master hoặc worker node và chạy như một Pod bình thường và nằm trong namespace tên là kube-system
+kubectl get po -n kube-system
 
 - Master node gồm các thành phần: API Server(kube-apiserver), distribute database(etcd), Scheduler(kube-scheduler), Controller Manager(kube-controller-manager)
 
++ Distribute database(etcd) có nhiệm vụ lưu lại tất cả resource (pod, replicas, deployment, service) bao gồm cả các thay đổi config trong kubernetes như tạo deployment, scaling operation, 5 instance cho application A, 10 instance cho application B,... các thông tin này trong kubernetes được gọi là desired state
+Tất cả các component khác bên trong cluster sẽ đọc ghi dữ liệu vào etcd thông qua API Server và chỉ duy nhất API Server tương tác trực tiếp với etcd
+# đọc dữ liệu etcd
+etcd /registry
+Database này là phân tán, nên có từ 3-5 replicas cho database này để đảm bảo các thông tin không bị mất
+Dữ liệu bên trong này được lưu dưới dạng key-value
 
++ API Server(kube-apiserver) thực hiện giao tiếp giữa các thành phần bên trong cluster và cả với client
+API server cung cấp cho một REST API để thực hiện các hành động CRUD lên cluster state, đọc, ghi, thay đổi cluster state và lưu cluster state vào etcd
+API server sẽ chịu trách nhiệm Authentication, Authorization client, validation config của resource, chuyển đổi resource thành dạng có thể lưu vào trong etcd. Một API server client hay dùng nhất là kubectl
+
+API Server không thực hiện công việc tạo ra Pod, hoặc tạo ra ReplicaSet, tất cả những gì nó làm là lưu resource vào etcd, sau đó nó sẽ gửi thông báo tới component phụ trách việc tạo ra resource đó - Controller Manager
+
+VD: 
+Các command từ kubectl hoặc từ các thay đổi trên giao diện console (Google Cloud Console...) sẽ được gọi qua apiserver trước khi được chuyển đến các controler để xử lý chúng
+Khi tạo 1 resource, 1 POST request sẽ được gửi đến API Server với body là config của resource. Sau đó API server sẽ kiểm tra xem client này có được phép gọi tới nó hay không qua Authentication plugin, sau đó API sẽ kiểm tra quyền của client này có được thực hiện hành động này hay không qua Authorization plugin. Tiếp theo API server sẽ thực hiện chuyển đổi config resource ban đầu thành dạng format nó có thể đọc thông quá các Admission control plugin. Bước tiếp theo API server sẽ validation config của resource này có đúng hay không, nếu mọi thứ đều ok hết thì resource này sẽ được lưu vào ectd
+
++ Scheduler(kube-scheduler) Đây là component phụ trách việc sẽ chọn worker nào mà Pod sẽ được deploy tới. Công việc nó làm sẽ là lắng nghe thông báo từ API server về việc Pod nào đã được lưu vào ectd xong, mà chưa có thuộc tính node. Nó sẽ lựa chọn worker node phù hợp dựa trên các thông số resource khả dụng, constraint..., sau đó đó update thuộc tính node của Pod resource thông qua API server. Sau đó, API server sẽ thông báo tới kubelet ở worker node đó để tạo ra container runtime tương ứng với Pod đó.
+
++ Controller Manager(kube-controller-manager)
+Đây là component phụ trách việc tạo, deploy các resource thông qua API server. Component này sẽ chứa nhiều controller khác nhau, mỗi controller sẽ thực hiện công việc riêng của nó. Một số controller như: Replication controllers, Deployment controller,...
+Controller Manager còn quản lý tổng thể các thông số (overall health) của cluster, nó được gọi là 1 control loop, một vòng lắp vô hạn để điều tiết trạng thái của hệ thống, controller này sẽ theo dõi các shared state của cluster thông qua api server, nó sẽ điều phối để thực hiện gửi các yêu cầu đến các controller khác
+
+- Worker node(Node) gồm các thành phần: Node Agent(kubelet), Networking Component(kube-proxy), Container Runtime(CRI - docker, rkt,...), PODS
+
++ PODS: thành phần chứa các running containers
+
++ Node Agent(kubelet) sẽ thực hiện moniter bên trong node, quản lý các container runtime các và nó sẽ chịu trách nhiệm tương tác với master node
+Khi join một worker node vào master, thì công việc đầu tiên của kubelet này sẽ là tạo một POST request với body là node config tới API server để tạo một node resource. Sau đó nó sẽ lắng nghe thông báo từ API server về Pod mà được scheduled tới nó (do Scheduler thực hiện trên master node) để tạo container runtime tương ứng. Ngoài ra kubelet còn giám sát container và gửi thông tin đó lên API server. Khi Pod bị xóa khỏi API server, API server sẽ thông báo tới kubelet và nó sẽ thực hiện việc xóa container đó ra khỏi node, sau khi xong thì nó sẽ gửi thông báo lại cho API server là container tương ứng với Pod đó đã được xóa xong
+
++ Networking Component(kube-proxy)
+Đây là component quản lý traffic và network của worker node mà liên quan tới Pod. Khi tạo Service để client có thể tương tác được với Pod, thì ở bên dưới kube-proxy này sẽ dựa vào config của service để cấu hình network tương ứng ở worker node để một request có thể gửi được tới Pod mà nằm phía sau Service. Thằng kube-proxy này sẽ có 3 mode: userspace, iptable, ipvs
+userspace mode là cách đầu tiên mà kube-proxy được implement, request từ client sẽ iptable của OS sau đó gửi đến kube-proxy (proxy-server) rồi mới được gửi mới pod
+iptable mode được phát triển để cải thiện performent, khi này request sẽ được gửi thẳng từ iptable tới pod, kube-proxy chỉ thực hiện nhiệm vụ setting để request tới được pod từ iptable không phải đi qua 1 proxy-server nữa.
+ipvs(IP vitrual service) là được phát triển để cải thiện tiếp hiệu năng của iptable
+
++ Container Runtime
+component dùng để chạy các container, Container Runtime được sử dụng phổ biến ở đây là docker, ngoài ra trên Kubernetes có thể sử dụng với bất cứ OCI (Open Container Interface) nào khác để chạy container
+
+Ví dụ luồng xử lý cơ bản:
+Khi tạo một Deployment dùng kubectl
+Đầu tiên, kubectl sẽ extract config file và gán vào body của post request, sau đó sẽ gửi post request này tới API server, API server sau khi thực hiện hết các việc của nó và lưu được deployment resouce vào bên trong etcd, lúc này API server sẽ gửi thông báo tới Deployment controller. Deployment controller nhận được thông báo rằng deployment mới đã được tạo, thì nó sẽ tìm config về template ReplicaSet bên trong config của nó để gửi request tạo ra ReplicaSet tới API server. Sau khi API server lưu ReplicaSet resouce vào trong etcd thì nó sẽ gửi thông báo cho ReplicaSet controller, ReplicaSet controller sẽ nhận thông báo và gửi request tạo Pod tới API server. API server lưu Pod resouce và thông báo cho Schedulcer, Scheduler chọn node và báo lại cho API server. API server sẽ thông báo tới kubelet ở worker node tương ứng để tạo container runtime cho Pod
 
 Command
 Tạo deployment
@@ -81,7 +125,7 @@ Khi thực hiện command kubectl expose deployment, Kubernetes thực hiện t�
 kubectl get pods
 kubectl describe pod <pod id>
 
-Node > Multi pod > Multi container
+Node > Multi pods > Multi containers
 
 Mỗi pod có 1 unique ip address, trong 1 pod có thể chứa nhiều container, các container này sẽ chia sẻ tài nguyên bên trong pod, có thể tương tác với nhau bằng cách gọi nhau qua localhost
 Các pod khác nhau trong cùng 1 node có thể là các application khác nhau hoặc cũng có thể liên quán đến cùng 1 application
