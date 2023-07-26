@@ -1,4 +1,46 @@
-Micro service
+MicroService
+
+Là service mà nó được exposed như là rest api
+- Small well-chosen  deployable unit
+- Should be Cloud-Enabled 
+
+Ưu điểm:
+Không phụ thuộc ngôn ngữ lập trình, quy trình...
+Dynamic scaling
+
+- Stateless: client gửi dữ liệu lên server, server thực thi yêu cầu trả về kết quả cho client > quan hệ giữa server và client sẽ cắt đứt, server k lưu bất cứ dữ liệu gì của client
+- Stateful: server cần lưu dữ liệu của client, server và client có ràng buộc với nhau về dữ liệu này, có thể sử dụng để cho các request tiếp theo hoặc sử dụng trong tương lai cho mục đích khác
+- Bản chất HTTP là giao thức ứng dụng(application protocol) dạng stateless
+- Ứng dựng cloud-native là ứng dụng được xây dựng ngay từ đầu để chạy trên cloud, dựa trên kiến trúc microservice
+- Ứng dựng cloud-based là bất kể ứng dụng kiểu nào (monolithic, microservice...) được host trên cloud-based VM
+- Ứng dựng cloud-enabled là ứng dụng được xây dựng trên hạ tầng truyền thống và được chuyển đổi để chạy trên cloud
+
+Thay vì xây dựng 1 service lớn thì sẽ thực hiện tạo ra 1 tập các service nhỏ, các service này sẽ có phạm vi rõ ràng, tương tác lẫn nhau và Cloud-Enabled
+
+Tính chất Cloud-Enabled ở đây có thể là triển khai thêm trên cloud bất cứ lúc nào
+Ví dụ
+
+MicroService1 có 2 instance A1, A2
+MicroService2 có 3 instance B1, B2, B3
+MicroService3 có 1 instance C1
+
+Nếu MicroService3 quá tải có thể nhanh chóng tạo thêm instance mới để mở rộng hoạt động, MicroService2 có thể drop instance nếu không cần thiết
+
+Lưu ý khi thiết kế microservice
+- Bounded context: instead of one big monolith application we would be building about five small microservices or 10 or 20 or hundred.
+Định nghĩa phạm vi, nghiệp vụ cho từng microservice
+- configuration management: Khi có nhiều microservice, mỗi microservice có nhiều instance thì sẽ tiêu tốn nhiều công để quản lý
+- dynamic scale up and scale down: khi nào thì tạo thêm instance, khi nào thì bỏ bớt, cân bằng tải
+- monitoring, logging
+- 1 microservice down ko ảnh hưởng đến application
+
+
+Spring Cloud Config Server đưa ra giải pháp lưu trữ configuration cho tất cả các môi trường khác nhau của tất cả microservice trên Git
+Dynamic scale up and down: Naming Server, Ribbon, Feign
+Monitoring: Zipkin Distributed Tracing Server
+Spring Cloud Sleuth to assign a ID to a request
+
+
 ***** Config service, centralized config *****
 
 <dependency>

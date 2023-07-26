@@ -1,0 +1,56 @@
+SOLID
+1. Single Responsibility Principle: Every software component should have one and only one responsibility
+
+* Higher Cohesion and Loose Coupling
+- Một khía cạnh cần chú ý trong nguyên tắc này: Sự gắn kết (Cohesion)
+Cohesion is the degree to which the various parts of a software component are related
+Các thành phần trong cùng 1 component (Class, function, package,...) nên có sự gắn kết cao
+VD: Trong 1 class nếu có sự gắn kết cao giữa các function, thì có thể dễ dàng áp dụng single responsibility cho tất cả các function
+Các hàm tính diện tích, chu vi liên quan trực tiếp đến thuộc tính cạnh của hình vuông
+Các draw, rotate chỉ thực hiện các nhiệm vụ hiển thị hình vuông lên UI
+Nếu đặt các hàm draw, rotate vào trong class Square thì không có sự gắn kết với các hàm tính chu vi, diện tích, khi tách biệt ra 2 class khác nhau việc tuân thủ nguyên tắc Single responsibility được thực hiện dễ dàng và rõ ràng hơn
+
+public class Square {
+	int side;
+	public int area() {return side * side;}
+	public int perimeter() {return side * 4;}
+}
+
+public class SquareUI {
+	Square square;
+	public void draw() {
+		//render square to UI
+	}
+	
+	public void rotate(int degree) {
+		//retate square and draw
+	}
+}
+
+- Khía cạnh khác cần chú ý là: Sự ràng buộc (Coupling)
+Coupling is defined as the level of inter dependency between various software components.
+Không nên có sự ràng buộc chặt chẽ giữa các component với nhau
+VD:
+public class Student {
+	private int id;
+	private String name;
+	// ...
+	
+	public void save() {
+		// save this student to DB
+		// open connection to DB like MySQL
+		// create statement and execute query
+		// Không nên thực hiện xử lý logic trên trong class Student, việc này dẫn đến sự phụ thuộc của class Student vào database, ví dụ đang kết nối đến MySql và sau này chuyển sang Oracle, NoSQL...
+		// Class Student chỉ nên chịu trách nhiệm (Single Responsibility) với các thuộc tính của chính nó như id, name,... tách việc chịu trách nhiệm với database sang thành phần khác, StudentRepository
+		// Khi thực hiện cập nhật bất cứ thay đổi database nào chỉ cần StudentRepository thực hiện, đúng với trách nhiệm của nó, xử lý giao tiếp với database
+		// Việc tách logic giao tiếp với database sang StudentRepository là hành động làm giảm sự ràng buộc
+		new StudentRepository().save(this);
+	}
+}
+
+public class StudentRepository {
+	public void save(Student student) {
+		// open connection to DB like MySQL
+		// create statement and execute query
+	}
+}
